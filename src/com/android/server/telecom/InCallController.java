@@ -122,6 +122,11 @@ public final class InCallController extends CallsManagerListenerBase {
         public void onConferenceableCallsChanged(Call call) {
             updateCall(call);
         }
+
+        @Override
+        public void onCallSubstateChanged(Call call) {
+            updateCall(call);
+        }
     };
 
     /**
@@ -192,6 +197,11 @@ public final class InCallController extends CallsManagerListenerBase {
     }
 
     @Override
+    public void onCallExtrasUpdated(Call call) {
+        updateCall(call);
+    }
+
+    @Override
     public void onConnectionServiceChanged(
             Call call,
             ConnectionServiceWrapper oldService,
@@ -207,6 +217,19 @@ public final class InCallController extends CallsManagerListenerBase {
             for (IInCallService inCallService : mInCallServices.values()) {
                 try {
                     inCallService.onAudioStateChanged(newAudioState);
+                } catch (RemoteException ignored) {
+                }
+            }
+        }
+    }
+
+    @Override
+    public void onCanAddCallChanged(boolean canAddCall) {
+        if (!mInCallServices.isEmpty()) {
+            Log.i(this, "onCanAddCallChanged : %b", canAddCall);
+            for (IInCallService inCallService : mInCallServices.values()) {
+                try {
+                    inCallService.onCanAddCallChanged(canAddCall);
                 } catch (RemoteException ignored) {
                 }
             }
@@ -433,14 +456,10 @@ public final class InCallController extends CallsManagerListenerBase {
         String callId = mCallIdMapper.getCallId(call);
 
         int capabilities = call.getCallCapabilities();
-        if (CallsManager.getInstance().isAddCallCapable(call)) {
-            capabilities |= PhoneCapabilities.ADD_CALL;
-        }
 
         // Disable mute and add call for emergency calls.
         if (call.isEmergencyCall()) {
             capabilities &= ~PhoneCapabilities.MUTE;
-            capabilities &= ~PhoneCapabilities.ADD_CALL;
         }
 
         int properties = call.getCallProperties();
@@ -515,7 +534,8 @@ public final class InCallController extends CallsManagerListenerBase {
                 call.getVideoState(),
                 conferenceableCallIds,
                 call.getExtras(),
-                call.mIsActiveSub);
+                call.mIsActiveSub,
+                call.getCallSubstate());
     }
 
     /**

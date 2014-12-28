@@ -90,6 +90,7 @@ final class Call implements CreateConnectionResponse {
         void onConnectionManagerPhoneAccountChanged(Call call);
         void onPhoneAccountChanged(Call call);
         void onConferenceableCallsChanged(Call call);
+        void onCallSubstateChanged(Call call);
     }
 
     abstract static class ListenerBase implements Listener {
@@ -141,6 +142,8 @@ final class Call implements CreateConnectionResponse {
         public void onPhoneAccountChanged(Call call) {}
         @Override
         public void onConferenceableCallsChanged(Call call) {}
+        @Override
+        public void onCallSubstateChanged(Call call) {}
     }
 
     private static final OnQueryCompleteListener sCallerInfoQueryListener =
@@ -172,6 +175,11 @@ final class Call implements CreateConnectionResponse {
             processDirectToVoicemail();
         }
     };
+
+    // Key used to pack OEM call extras within a Call object's
+    // mExtras Bundle. Used by the setCallExtras method in
+    // CallsManager.
+    public static final String KEY_OEM_EXTRAS = "OEMExtras";
 
     /** True if this is an incoming call. */
     private final boolean mIsIncoming;
@@ -293,6 +301,7 @@ final class Call implements CreateConnectionResponse {
     private final ConnectionServiceRepository mRepository;
     private final Context mContext;
     boolean mIsActiveSub = false;
+    private int mCallSubstate;
 
     private boolean mWasConferencePreviouslyMerged = false;
 
@@ -358,7 +367,7 @@ final class Call implements CreateConnectionResponse {
             component = mConnectionService.getComponentName().flattenToShortString();
         }
 
-        return String.format(Locale.US, "[%s, %s, %s, %s, %d, childs(%d), has_parent(%b), [%s], %b, %s]",
+        return String.format(Locale.US, "[%s, %s, %s, %s, %d, childs(%d), has_parent(%b), [%s], %b, %s %d]",
                 System.identityHashCode(this),
                 CallState.toString(mState),
                 component,
@@ -367,7 +376,9 @@ final class Call implements CreateConnectionResponse {
                 getChildCalls().size(),
                 getParentCall() != null,
                 PhoneCapabilities.toString(getCallCapabilities()),
-                mIsActiveSub, mTargetPhoneAccountHandle);
+                mIsActiveSub,
+                mTargetPhoneAccountHandle,
+                getCallSubstate());
     }
 
     int getState() {
@@ -719,6 +730,7 @@ final class Call implements CreateConnectionResponse {
         setRingbackRequested(connection.isRingbackRequested());
         setIsVoipAudioMode(connection.getIsVoipAudioMode());
         setStatusHints(connection.getStatusHints());
+        setCallSubstate(connection.getCallSubstate());
 
         mConferenceableCalls.clear();
         for (String id : connection.getConferenceableConnectionIds()) {
@@ -1406,5 +1418,26 @@ final class Call implements CreateConnectionResponse {
                 return CallState.RINGING;
         }
         return CallState.DISCONNECTED;
+    }
+
+    /**
+     * The current call substate.
+     */
+    public int getCallSubstate() {
+        return mCallSubstate;
+    }
+
+
+    /**
+     * Determines the current substate for the call.
+     *
+     * @param callSubstate The substate for the call.
+     */
+    public void setCallSubstate(int callSubstate) {
+        mCallSubstate = callSubstate;
+
+        for (Listener l : mListeners) {
+            l.onCallSubstateChanged(this);
+        }
     }
 }
