@@ -17,8 +17,8 @@
 package com.android.server.telecom;
 
 import android.content.Context;
-import android.hardware.CmHardwareManager;
 import android.os.PowerManager;
+import org.cyanogenmod.hardware.TapToWake;
 
 /**
  * This class manages the proximity sensor and allows callers to turn it on and off.
@@ -28,11 +28,10 @@ public class ProximitySensorManager extends CallsManagerListenerBase {
 
     private final PowerManager.WakeLock mProximityWakeLock;
     private boolean mWasTapToWakeEnabled = false;
-    private final CmHardwareManager mCmHardwareManager;
 
     public ProximitySensorManager(Context context) {
         PowerManager pm = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
-        mCmHardwareManager = (CmHardwareManager) context.getSystemService(Context.CMHW_SERVICE);
+
         if (pm.isWakeLockLevelSupported(PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK)) {
             mProximityWakeLock = pm.newWakeLock(
                     PowerManager.PROXIMITY_SCREEN_OFF_WAKE_LOCK, TAG);
@@ -66,10 +65,9 @@ public class ProximitySensorManager extends CallsManagerListenerBase {
         if (!mProximityWakeLock.isHeld()) {
             Log.i(this, "Acquiring proximity wake lock");
             mProximityWakeLock.acquire();
-            if (mCmHardwareManager.isSupported(CmHardwareManager.FEATURE_TAP_TO_WAKE)) {
-                mWasTapToWakeEnabled =
-                        mCmHardwareManager.get(CmHardwareManager.FEATURE_TAP_TO_WAKE);
-                mCmHardwareManager.set(CmHardwareManager.FEATURE_TAP_TO_WAKE, false);
+            if (isTapToWakeSupported()) {
+                mWasTapToWakeEnabled = TapToWake.isEnabled();
+                TapToWake.setEnabled(false);
             }
         } else {
             Log.i(this, "Proximity wake lock already acquired");
@@ -85,9 +83,8 @@ public class ProximitySensorManager extends CallsManagerListenerBase {
             return;
         }
         if (mProximityWakeLock.isHeld()) {
-            if (mCmHardwareManager.isSupported(CmHardwareManager.FEATURE_TAP_TO_WAKE)
-                    && mWasTapToWakeEnabled) {
-                mCmHardwareManager.set(CmHardwareManager.FEATURE_TAP_TO_WAKE, true);
+            if (isTapToWakeSupported() && mWasTapToWakeEnabled) {
+                TapToWake.setEnabled(true);
             }
             Log.i(this, "Releasing proximity wake lock");
             int flags =
@@ -95,6 +92,15 @@ public class ProximitySensorManager extends CallsManagerListenerBase {
             mProximityWakeLock.release(flags);
         } else {
             Log.i(this, "Proximity wake lock already released");
+        }
+    }
+
+    private static boolean isTapToWakeSupported() {
+        try {
+            return TapToWake.isSupported();
+        } catch (NoClassDefFoundError e) {
+            // Hardware abstraction framework not installed
+            return false;
         }
     }
 }
