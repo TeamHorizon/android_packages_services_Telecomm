@@ -963,49 +963,63 @@ public final class BluetoothPhoneServiceImpl {
                 }
             }
 
-            if (mBluetoothHeadset != null &&
-                    (numActiveCalls != mNumActiveCalls ||
-                    numHeldCalls != mNumHeldCalls ||
-                    bluetoothCallState != mBluetoothCallState ||
-                    !TextUtils.equals(ringingAddress, mRingingAddress) ||
-                    ringingAddressType != mRingingAddressType ||
-                    (heldCall != mOldHeldCall && !ignoreHeldCallChange) ||
-                    force) && !callsSwitched) {
+        int numActiveCalls = activeCall == null ? 0 : 1;
+        int numHeldCalls = mCallsManager.getNumHeldCalls();
+        // Intermediate state for GSM calls which are in the process of being swapped.
+        // TODO: Should we be hardcoding this value to 2 or should we check if all top level calls
+        //       are held?
+        boolean callsPendingSwitch = (numHeldCalls == 2);
 
-                // If the call is transitioning into the alerting state, send DIALING first.
-                // Some devices expect to see a DIALING state prior to seeing an ALERTING state
-                // so we need to send it first.
-                boolean sendDialingFirst = mBluetoothCallState != bluetoothCallState &&
-                        bluetoothCallState == CALL_STATE_ALERTING;
+        // For conference calls which support swapping the active call within the conference
+        // (namely CDMA calls) we need to expose that as a held call in order for the BT device
+        // to show "swap" and "merge" functionality.
+        boolean ignoreHeldCallChange = false;
+        if (activeCall != null && activeCall.isConference() &&
+                !activeCall.can(Connection.CAPABILITY_CONFERENCE_HAS_NO_CHILDREN)) {
+            if (activeCall.can(Connection.CAPABILITY_SWAP_CONFERENCE)) {
+                // Indicate that BT device should show SWAP command by indicating that there is a
+                // call on hold, but only if the conference wasn't previously merged.
+                numHeldCalls = activeCall.wasConferencePreviouslyMerged() ? 0 : 1;
+            } else if (activeCall.can(Connection.CAPABILITY_MERGE_CONFERENCE)) {
+                numHeldCalls = 1;  // Merge is available, so expose via numHeldCalls.
+            }
 
-                mOldHeldCall = heldCall;
-                mNumActiveCalls = numActiveCalls;
-                mNumHeldCalls = numHeldCalls;
-                mBluetoothCallState = bluetoothCallState;
-                mRingingAddress = ringingAddress;
-                mRingingAddressType = ringingAddressType;
-
-                if (sendDialingFirst) {
-                    // Log in full to make logs easier to debug.
-                    Log.i(TAG, "updateHeadsetWithCallState " +
-                            "numActive %s, " +
-                            "numHeld %s, " +
-                            "callState %s, " +
-                            "ringing number %s, " +
-                            "ringing type %s",
-                            mNumActiveCalls,
-                            mNumHeldCalls,
-                            CALL_STATE_DIALING,
-                            Log.pii(mRingingAddress),
-                            mRingingAddressType);
-                    mBluetoothHeadset.phoneStateChanged(
-                            mNumActiveCalls,
-                            mNumHeldCalls,
-                            CALL_STATE_DIALING,
-                            mRingingAddress,
-                            mRingingAddressType);
+            for (Call childCall : activeCall.getChildCalls()) {
+                // Held call has changed due to it being combined into a CDMA conference. Keep
+                // track of this and ignore any future update since it doesn't really count as
+                // a call change.
+                if (mOldHeldCall == childCall) {
+                    ignoreHeldCallChange = true;
+                    break;
                 }
+            }
+        }
 
+        if (mBluetoothHeadset != null &&
+                (force ||
+                        (!callsPendingSwitch &&
+                                (numActiveCalls != mNumActiveCalls ||
+                                 numHeldCalls != mNumHeldCalls ||
+                                 bluetoothCallState != mBluetoothCallState ||
+                                 !TextUtils.equals(ringingAddress, mRingingAddress) ||
+                                 ringingAddressType != mRingingAddressType ||
+                                 (heldCall != mOldHeldCall && !ignoreHeldCallChange))))) {
+
+            // If the call is transitioning into the alerting state, send DIALING first.
+            // Some devices expect to see a DIALING state prior to seeing an ALERTING state
+            // so we need to send it first.
+            boolean sendDialingFirst = mBluetoothCallState != bluetoothCallState &&
+                    bluetoothCallState == CALL_STATE_ALERTING;
+
+            mOldHeldCall = heldCall;
+            mNumActiveCalls = numActiveCalls;
+            mNumHeldCalls = numHeldCalls;
+            mBluetoothCallState = bluetoothCallState;
+            mRingingAddress = ringingAddress;
+            mRingingAddressType = ringingAddressType;
+
+            if (sendDialingFirst) {
+                // Log in full to make logs easier to debug.
                 Log.i(TAG, "updateHeadsetWithCallState " +
                         "numActive %s, " +
                         "numHeld %s, " +
