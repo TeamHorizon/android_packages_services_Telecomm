@@ -92,4 +92,8 @@ public class CallsManagerListenerBase implements CallsManager.CallsManagerListen
     @Override
     public void onProcessIncomingCall(Call call) {
     }
+
+    @Override
+    public void onHoldToneRequested(Call call) {
+    }
 }
